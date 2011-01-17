@@ -45,7 +45,7 @@ class App
   def get_status(account)
 
     value = ""
-    IO.popen("zmprov ga #{account} zimbraAccountStatus") do |output|
+    IO.popen("/opt/zimbra/bin/zmprov ga #{account} zimbraAccountStatus") do |output|
       output.each do |line|
 	    next unless line.match(/zimbraAccountStatus: (\w+)/)
 		value = $1
@@ -60,7 +60,7 @@ class App
 
 	# Fill hash @quotas 
 	@quotas = {}
-    IO.popen("zmprov gqu #{@options[:server]}", "r") do |output|
+    IO.popen("/opt/zimbra/bin/zmprov gqu #{@options[:server]}", "r") do |output|
 	   output.each do |line|
 	     next unless line.match(/(\S+) (\d+) (\d+)/) and $2.to_i != 0
 		 next unless $1 == @options[:user] or @options[:user] == 'all'
