@@ -80,7 +80,14 @@ class App
 
 	# Get details if needed
 	if @options[:details]
-      @quotas.each_key {|key| @quotas[key][2] = get_status(key)}
+	  # Using threads as get_status relies on "zmprov ga" which is slow and can be run in parallel
+	  threads = []
+      @quotas.each_key do |key| 
+	    threads << Thread.new(key) do |mykey|
+	      @quotas[mykey][2] = get_status(mykey)
+		end
+      end
+	  threads.each { |t| t.join }
 	end
 
   end
