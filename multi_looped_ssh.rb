@@ -119,40 +119,38 @@ class App
     end
 
     puts "A total of #{usable_hosts.size} hosts will be used"
-
-    # Prepare the multi-host ssh session and run the command simultaneously on every host
-    Net::SSH::Multi.start({:default_user => 'root', :on_error => :warn}) do |session|
-      usable_hosts.each do |host|
-        session.use(host.ip4_addr)
-      end
-      puts ""
-      puts "The command is ready to be executed as specified:"
-      puts "Command: #{@options[:command]}"
-      puts "Number of loops: #{@options[:loop_nb]}"
-      puts "Delay: #{@options[:delay]}"
-      print "Press Enter to proceed (or Ctrl-C to abort):" 
-      begin
-        gets 
-      rescue Interrupt
-        puts "\nExecution Aborted"
-        exit 1
-      end
-
-      # Go ahead with the loop
-      @options[:loop_nb].times do |i|
-        puts "Loop \##{i+1}"
-        begin
-          session.exec(@options[:command]) do |ch, stream, data|
-            puts "[#{ch[:host]}] #{data}" if stream == :stderr or not @options[:quiet]
-          end
-          session.loop
-        rescue 
-          puts "Warning: It looks like some hosts are not available anymore, please re-run with -f"
-        end
-        sleep @options[:delay]
-      end
+    puts ""
+    puts "The command is ready to be executed as specified:"
+    puts "Command: #{@options[:command]}"
+    puts "Number of loops: #{@options[:loop_nb]}"
+    puts "Delay: #{@options[:delay]}"
+    print "Press Enter to proceed (or Ctrl-C to abort):" 
+    begin
+      gets 
+    rescue Interrupt
+      puts "\nExecution Aborted"
+      exit 1
     end
-    puts "Over!" 
+
+    # Go ahead with the loop, creating a thread per connection
+    threads = []
+    @options[:loop_nb].times do |i|
+      puts "Starting loop \##{i+1}"
+      usable_hosts.each do |host|
+        threads << Thread.new(host) do |this_host|
+          Net::SSH.start(this_host.ip4_addr, 'root', :timeout => 2) do |ssh|
+            ssh.exec!(@options[:command]) do |ch, stream, data|
+              puts "[#{this_host.ip4_addr}] #{data}" if stream == :stderr or not @options[:quiet]
+            end
+          end
+        end
+      end 
+      sleep @options[:delay]  
+    end
+
+    # Wait for all the threads to close up 
+    threads.each {|t| t.join}
+
   end
 
 end

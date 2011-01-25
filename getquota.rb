@@ -2,7 +2,6 @@
 
 require 'optparse'
 
-
 class Array
 
   def get_max_size
@@ -58,37 +57,37 @@ class App
 
   def fill_hash!
 
-	# Fill hash @quotas 
-	@quotas = {}
+    # Fill hash @quotas 
+    @quotas = {}
     IO.popen("/opt/zimbra/bin/zmprov gqu #{@options[:server]}", "r") do |output|
-	   output.each do |line|
-	     next unless line.match(/(\S+) (\d+) (\d+)/) and $2.to_i != 0
-		 next unless $1 == @options[:user] or @options[:user] == 'all'
-		 @quotas[$1] = []
-	     @quotas[$1][0] = $3.to_i*100/$2.to_i
-		 @quotas[$1][1] = ($3.to_i/(1024**2)).to_s + '/' + ($2.to_i/(1024**2)).to_s
-	   end
-	end
-
-	# Keep only the top users if needed
-	if @options[:top] != 0
-	  # Sort the hash and get the top names
-      kept_names = (@quotas.sort {|x,y| y[1][0] <=> x[1][0]}).first(@options[:top]).collect {|v| v[0]}
-	  # Delete every entry in the hash which is not in kept_names
-	  @quotas.delete_if {|key, value| not kept_names.include?(key)}
-	end
-
-	# Get details if needed
-	if @options[:details]
-	  # Using threads as get_status relies on "zmprov ga" which is slow and can be run in parallel
-	  threads = []
-      @quotas.each_key do |key| 
-	    threads << Thread.new(key) do |mykey|
-	      @quotas[mykey][2] = get_status(mykey)
-		end
+      output.each do |line|
+        next unless line.match(/(\S+) (\d+) (\d+)/) and $2.to_i != 0
+        next unless $1 == @options[:user] or @options[:user] == 'all'
+        @quotas[$1] = []
+        @quotas[$1][0] = $3.to_i*100/$2.to_i
+        @quotas[$1][1] = ($3.to_i/(1024**2)).to_s + '/' + ($2.to_i/(1024**2)).to_s
       end
-	  threads.each { |t| t.join }
-	end
+    end
+
+    # Keep only the top users if needed
+    if @options[:top] != 0
+      # Sort the hash and get the top names
+      kept_names = (@quotas.sort {|x,y| y[1][0] <=> x[1][0]}).first(@options[:top]).collect {|v| v[0]}
+      # Delete every entry in the hash which is not in kept_names
+      @quotas.delete_if {|key, value| not kept_names.include?(key)}
+    end
+
+    # Get details if needed
+    if @options[:details]
+      # Using threads as get_status relies on "zmprov ga" which is slow and can be run in parallel
+      threads = []
+      @quotas.each_key do |key| 
+        threads << Thread.new(key) do |mykey|
+          @quotas[mykey][2] = get_status(mykey)
+        end
+      end
+      threads.each { |t| t.join }
+    end
 
   end
 
