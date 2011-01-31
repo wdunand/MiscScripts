@@ -4,6 +4,7 @@ require 'rubygems'
 require 'nmap/parser'
 require 'net/ssh/multi'
 require 'optparse'
+require 'highline/import'
 
 class App
 
@@ -57,6 +58,9 @@ class App
     @options[:quiet] = false
     @options[:max] = 0
     @options[:ssh_version] = /Debian/
+    @options[:user] = "root"
+    @options[:batch] = false
+    @options[:password] = ""
   end
 
 
@@ -68,18 +72,29 @@ class App
         @options[:targets] = v 
         @options[:fresh] = true
       end
-      opts.on("-c STRING", "Specifiy the command to be run on remote hosts") { |v| @options[:command] = v }
-      opts.on("-l INT", Integer, "Number of loops") { |v| @options[:loop_nb] = v }
-      opts.on("-d FLOAT", Float, "Delay between each loop in seconds") { |v| @options[:delay] = v }
-      opts.on("-f", "Perform a fresh scan instead of relying on previous log file") { @options[:fresh] = true }
-      opts.on("-q", "Do not relay stdout from the hosts") { @options[:quiet] = true }
-      opts.on("-m INT", Integer, "Maximum number of hosts to use") { |v| @options[:max] = v }
-      opts.on("-s STRING", Regexp, "SSH version for the host to match to be considered usable (regexp)") { |v| @options[:ssh_version] = v }
+      opts.on("-c STRING", "Specifiy the command to be run on remote hosts") {|v| @options[:command] = v}
+      opts.on("-l INT", Integer, "Number of loops") {|v| @options[:loop_nb] = v}
+      opts.on("-d FLOAT", Float, "Delay between each loop in seconds") {|v| @options[:delay] = v}
+      opts.on("-f", "Perform a fresh scan instead of relying on previous log file") {@options[:fresh] = true}
+      opts.on("-q", "Do not relay stdout from the hosts") {@options[:quiet] = true}
+      opts.on("-m INT", Integer, "Maximum number of hosts to use") {|v| @options[:max] = v}
+      opts.on("-s STRING", Regexp, "SSH version for the host to match to be considered usable (regexp)") {|v| @options[:ssh_version] = v}
+      opts.on("-u STRING", String, "Username to use when connecting to the hosts") {|v| @options[:user] = v}
+      opts.on("-b", "Operate in batch mode and never prompt the user for anything (incompatible with -p)") {@options[:batch] = true}
+      opts.on("-p", "Ask the script to prompt you for a password to use if key authentication fails") do
+	if @options[:batch] == true 
+          puts "Argument error: -b and -p flags are incompatible with each other"
+          exit 1
+        else
+          @options[:password] = ask("Enter password for #{@options[:user]} (not echoed):") {|q| q.echo = false}
+        end
+      end 
       opts.define_tail("\nDefaults to => #{$0}" + \
 	" -c '#{@options[:command]}'" + \
 	" -l #{@options[:loop_nb]}" + \
 	" -d #{@options[:delay]}" + \
-	" -s '#{@options[:ssh_version].source}'")
+	" -s '#{@options[:ssh_version].source}'" + \
+        " -u #{@options[:user]}")
       opts.parse! rescue (puts opts; exit 1)
     end
   end
@@ -124,25 +139,28 @@ class App
     puts "Command: #{@options[:command]}"
     puts "Number of loops: #{@options[:loop_nb]}"
     puts "Delay: #{@options[:delay]}"
-    print "Press Enter to proceed (or Ctrl-C to abort):" 
-    begin
-      gets 
-    rescue Interrupt
-      puts "\nExecution Aborted"
-      exit 1
+    unless @options[:batch]
+      print "Press Enter to proceed (or Ctrl-C to abort):" 
+      begin
+        gets 
+      rescue Interrupt
+        puts "\nExecution Aborted"
+        exit 1
+      end
     end
 
     # Go ahead with the loop, creating a thread per connection
     threads = []
     @options[:loop_nb].times do |i|
-      puts "Starting loop \##{i+1}"
+      puts "Starting loop \##{i+1}/#{@options[:loop_nb]} at #{Time::now.strftime('%X')}"
       usable_hosts.each do |host|
         threads << Thread.new(host) do |this_host|
-          Net::SSH.start(this_host.ip4_addr, 'root', :timeout => 2) do |ssh|
+          Net::SSH.start(this_host.ip4_addr, @options[:user], {:timeout => 5, :password => @options[:password]}) do |ssh|
             ssh.exec!(@options[:command]) do |ch, stream, data|
               puts "[#{this_host.ip4_addr}] #{data}" if stream == :stderr or not @options[:quiet]
             end
-          end
+            ssh.loop(15)
+          end 
         end
       end 
       sleep @options[:delay]  
